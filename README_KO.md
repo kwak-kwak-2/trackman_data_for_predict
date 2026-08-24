@@ -1,58 +1,45 @@
-# LG Aimers 9기 Public 910 추출 소스
+# RC3 P2 1072.563 코드 전용 공유본
 
-이 묶음에는 Public Score `910.2060575824`를 기록한 제출 ZIP의 **추출본과
-구조 설명만** 포함한다. 후속 연구 코드, 실험 결과, Notebook, 원본 대회
-데이터와 Colab 인증 정보는 포함하지 않았다.
+- 기준 Public score: `1072.5630000262`
+- 기준 모델: RC3 P2
+- 용도: 동일 팀 내부의 모델 구조 및 구현 검토
 
-## 구성
+이 공유본에는 Python 소스와 `requirements.txt`만 있다. 다음 항목은 포함하지 않았다.
 
-```text
-extracted/
-  model/                 # 학습 완료 모델, frozen lookup, 피처 코드
-  script.py              # 평가 서버에서 실행되는 실제 추론 코드
-  requirements.txt       # 당시 제출물의 원본 의존성 명세
-docs/
-  ARCHITECTURE_910.md
-MANIFEST.sha256
-```
+- 모델 가중치와 학습 데이터
+- 선수별 동결 통계와 JSON manifest
+- OOF 예측 및 실험 결과
+- 개인 로컬 경로와 Google Drive 경로
+- 파일 SHA 검증
+- 패키징, 제출물 조립, 감사 및 스모크 테스트 코드
+- Colab 런처와 과거 run 디렉터리 정보
 
-## 추론 경로
+## 구조
 
 ```text
-현재 평가 행
-  -> row-local 파생 피처
-  -> train-frozen CE lookup
-  -> v3_base / hist_current_gap Axis-A 5-class CatBoost 각 3 seed
-  -> 두 family 50:50 평균
-  -> train-frozen within-season residual 보정 3 seed
-  -> train-frozen 팀 이동 D6 보정
-  -> control_success 확률
+inference/
+  script.py
+  model/*.py
+
+training/
+  a4_anchor_reference.py
+  rc3_corrector_reference.py
+  residual_core/
 ```
 
-평가 행끼리 groupby, rolling, lag, 누적 상태 갱신 또는 test 전체 분포 보정을
-하지 않는다. `model/` 안의 일부 파일에는 과거 artifact 생성용 함수도 있지만,
-`script.py`의 평가 추론 경로에서는 frozen 파일을 읽어 현재 행에 조회만 한다.
+`inference/script.py`와 `inference/model/*.py`는 실제 최고점 제출의 추론 및 피처
+로직이다. 실행에 필요한 모델·통계·manifest는 의도적으로 제외했으므로 이 폴더만으로
+기존 제출을 실행할 수는 없다.
 
-## 구조 확인
+`training/*_reference.py`는 개인 경로와 실행 인프라를 제거한 학습 핵심이다.
+`training/residual_core/`에는 잔차 이력 집계, CatBoost/신경망 모델 및 RC3 variant
+학습 로직을 남겼다.
 
-상세 설명은 다음 문서를 먼저 읽는다.
+최종 결합식은 다음과 같다.
 
-```text
-docs/ARCHITECTURE_910.md
+```python
+final = clip(a4_anchor + 1.2 * base_corrector - 0.3 * recent_h2_corrector, 0, 1)
 ```
 
-전체 파일의 무결성은 다음 명령으로 확인한다.
-
-```bash
-sha256sum -c MANIFEST.sha256
-```
-
-## 주의사항
-
-- 이 디렉터리는 **추출된 검토용 소스**이며 제출 ZIP 자체가 아니다.
-- 제출하려면 `extracted/`의 내용이 ZIP 최상위가 되도록 별도로 압축해야 한다.
-- `feature_manifest.json`의 학습 지표 키를 포함해 `extracted/`는 당시 910
-  제출물 그대로이며, 별도의 후속 실험 코드나 결과는 포함하지 않는다.
-- 평가 서버의 최신 Python 및 패키지 계약을 제출 전에 다시 확인해야 한다.
-- 공식 데이터에서 학습된 모델과 선수별 frozen artifact가 포함되므로 같은 DACON
-  등록 팀 안에서만 비공개로 공유하고 공개 저장소에 올리지 않는다.
+추론은 평가 대상 행 자신의 값과 학습 데이터에서 미리 만든 동결 artifact만 사용해야
+한다. 평가 데이터의 다른 행을 이용한 집계, rolling, 보정은 허용되지 않는다.
